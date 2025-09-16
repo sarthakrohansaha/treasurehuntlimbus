@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Team Proximity Hunt</title>
+  <style>
+    * {margin: 0; padding: 0; box-sizing: border-box;}
+    body {font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+          background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+          min-height: 100vh; color: white;}
+    .container {max-width: 1000px; margin: 0 auto; padding: 20px;}
+    .header {text-align: center; margin-bottom: 30px;}
+    .card {background: rgba(255, 255, 255, 0.1); backdrop-filter: blur(10px);
+           border: 1px solid rgba(255, 255, 255, 0.2); border-radius: 15px;
+           padding: 25px; margin-bottom: 20px; box-shadow: 0 8px 32px rgba(31, 38, 135, 0.37);}
+    .admin-section {border-left: 4px solid #ff6b6b;}
+    .player-section {border-left: 4px solid #4ecdc4;}
+    .admin-auth {border-left: 4px solid #ff9500;}
+    input, button, select, textarea {width: 100%; padding: 12px; margin: 8px 0;
+           border: none; border-radius: 8px; font-size: 16px;}
+    input, select, textarea {background: rgba(255, 255, 255, 0.9); color: #333;}
+    button {background: linear-gradient(45deg, #ff6b6b, #ee5a24); color: white;
+            cursor: pointer; font-weight: bold; transition: all 0.3s ease;}
+    button:hover {transform: translateY(-2px); box-shadow: 0 5px 15px rgba(0,0,0,0.3);}
+    button:disabled {background: #666; cursor: not-allowed; transform: none;}
+    .status {padding: 15px; border-radius: 8px; margin: 10px 0; font-weight: bold;}
+    .success {background: rgba(46, 204, 113, 0.3); border: 1px solid #2ecc71;}
+    .error {background: rgba(231, 76, 60, 0.3); border: 1px solid #e74c3c;}
+    .warning {background: rgba(241, 196, 15, 0.3); border: 1px solid #f1c40f;}
+    .clue-display {background: rgba(255, 215, 0, 0.2); border: 2px solid gold; padding: 20px;
+                   border-radius: 10px; margin: 20px 0; text-align: center;}
+    #map {width: 100%; height: 300px; border-radius: 10px; margin: 10px 0;}
+    .hidden {display: none;}
+    .admin-access {text-align: center; margin-top: 30px;}
+    .admin-access-btn {background: rgba(255, 255, 255, 0.1); color: white;
+                       border: 1px solid rgba(255, 255, 255, 0.3); padding: 8px 16px;
+                       font-size: 14px; border-radius: 20px; cursor: pointer;
+                       transition: all 0.3s ease;}
+    .admin-access-btn:hover {background: rgba(255, 255, 255, 0.2);}
+    .player-list {margin-top: 10px;}
+    .player-list li {background: rgba(255,255,255,0.2); margin: 5px; padding: 5px; border-radius: 8px;}
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <h1>🎯 Team Proximity Hunt</h1>
+      <p>5 Players must be nearby to unlock each stage</p>
+    </div>
+
+    <!-- Admin Authentication -->
+    <div id="admin-auth" class="card admin-auth hidden">
+      <h2>🔐 Admin Access</h2>
+      <input type="password" id="adminCode" placeholder="Enter admin access code" maxlength="6">
+      <button onclick="verifyAdminCode()">Access Admin Panel</button>
+      <button onclick="cancelAdminAccess()" style="background: gray;">Cancel</button>
+      <div id="authStatus"></div>
+    </div>
+
+    <!-- Admin Section -->
+    <div id="admin-section" class="card admin-section hidden">
+      <h2>🛠️ Admin Panel</h2>
+
+      <h3>Generate Team</h3>
+      <input type="text" id="teamName" placeholder="Team Name (e.g., Fire Dragons)">
+      <input type="number" id="teamSize" placeholder="Number of Members" value="5" min="2" max="10">
+      <button onclick="generateTeam()">Generate Team</button>
+      <div id="generatedTeamDisplay"></div>
+
+      <h3>Set Stage</h3>
+      <label>Stage Number</label>
+      <select id="stageSelect">
+        <option value="1">Stage 1</option>
+        <option value="2">Stage 2</option>
+        <option value="3">Stage 3</option>
+      </select>
+      <label>Stage Code (5 digits)</label>
+      <input type="text" id="accessCode" maxlength="5">
+      <label>Stage Clue</label>
+      <textarea id="clueText"></textarea>
+      <label>Proximity (meters)</label>
+      <input type="number" id="proximityInput" min="10" value="50">
+      <button onclick="setStageCodeAndClue()">Save Stage</button>
+      <div id="adminStatus"></div>
+
+      <button onclick="logoutAdmin()" style="background: gray; margin-top:10px;">Logout</button>
+    </div>
+
+    <!-- Player Section -->
+    <div id="player-section" class="card player-section">
+      <h2>🎮 Player Panel</h2>
+      <input type="text" id="playerId" placeholder="Enter your team member ID">
+      <button onclick="loginPlayer()">Join Game</button>
+      <div id="playerStatus"></div>
+
+      <ul id="playerList" class="player-list"></ul>
+
+      <div id="gameArea" class="hidden">
+        <h3>Enter Stage Code</h3>
+        <input type="text" id="playerCode" maxlength="5">
+        <button onclick="submitCode()">Submit Code</button>
+        <div id="gameStatus"></div>
+
+        <div id="clueArea" class="clue-display hidden"></div>
+        <div id="map" class="hidden"></div>
+      </div>
+    </div>
+
+    <div class="admin-access">
+      <button class="admin-access-btn" onclick="showAdminAuth()">Admin Access</button>
+    </div>
+  </div>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css" />
+
+  <script>
+    /* ==== Your JavaScript logic remains same as in your uploaded file ==== */
+    /* (Admin functions, team generation, stage setup, player login, 
+       proximity checking, and map integration) */
+  </script>
+</body>
+</html>
