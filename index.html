@@ -97,8 +97,8 @@
       <ul id="playerList" class="player-list"></ul>
 
       <div id="gameArea" class="hidden">
-        <h3>Enter Stage Code</h3>
-        <input type="text" id="playerCode" maxlength="5">
+        <h3>Stage <span id="stageNumber">1</span></h3>
+        <input type="text" id="playerCode" maxlength="5" placeholder="Enter 5-digit code">
         <button onclick="submitCode()">Submit Code</button>
         <div id="gameStatus"></div>
 
@@ -116,9 +116,191 @@
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css" />
 
   <script>
-    /* ==== Your JavaScript logic remains same as in your uploaded file ==== */
-    /* (Admin functions, team generation, stage setup, player login, 
-       proximity checking, and map integration) */
+    // --- Game State ---
+    let gameState = {
+      isAdminAuthenticated: false,
+      teams: {},
+      players: [],
+      stages: {},
+      currentStage: 1
+    };
+    const ADMIN_CODE = "741245";
+    let map, marker;
+
+    // --- Admin Functions ---
+    function showAdminAuth() {
+      document.getElementById("admin-auth").classList.remove("hidden");
+      document.getElementById("adminCode").focus();
+    }
+    function verifyAdminCode() {
+      const enteredCode = document.getElementById("adminCode").value.trim();
+      if (enteredCode === ADMIN_CODE) {
+        gameState.isAdminAuthenticated = true;
+        document.getElementById("admin-auth").classList.add("hidden");
+        document.getElementById("admin-section").classList.remove("hidden");
+        document.getElementById("player-section").classList.add("hidden");
+        showStatus("authStatus", "Access granted!", "success");
+      } else {
+        showStatus("authStatus", "Invalid access code", "error");
+      }
+      document.getElementById("adminCode").value = "";
+    }
+    function cancelAdminAccess() {
+      document.getElementById("admin-auth").classList.add("hidden");
+      document.getElementById("adminCode").value = "";
+      document.getElementById("authStatus").innerHTML = "";
+    }
+    function logoutAdmin() {
+      gameState.isAdminAuthenticated = false;
+      document.getElementById("admin-section").classList.add("hidden");
+      document.getElementById("player-section").classList.remove("hidden");
+    }
+    function generateTeam() {
+      const teamName = document.getElementById("teamName").value.trim();
+      const teamSize = parseInt(document.getElementById("teamSize").value) || 5;
+      if (!teamName) {
+        showStatus("adminStatus", "Please enter a team name", "error");
+        return;
+      }
+      const teamId = teamName.replace(/\s+/g, '').substring(0, 3).toUpperCase();
+      if (gameState.teams[teamId]) {
+        showStatus("adminStatus", "Team ID already exists", "error");
+        return;
+      }
+      const members = [];
+      for (let i = 1; i <= teamSize; i++) {
+        members.push(`${teamId}${i.toString().padStart(3,"0")}`);
+      }
+      gameState.teams[teamId] = { name: teamName, members };
+      displayGeneratedTeam(teamId, teamName, members);
+      showStatus("adminStatus", `Team ${teamName} created!`, "success");
+      document.getElementById("teamName").value = "";
+    }
+    function displayGeneratedTeam(teamId, teamName, members) {
+      document.getElementById("generatedTeamDisplay").innerHTML = `
+        <div class="team-id-display">
+          <h4>${teamName} (${teamId})</h4>
+          <p>Member IDs:</p>
+          ${members.map(m => `<div>${m}</div>`).join("")}
+        </div>`;
+    }
+    function setStageCodeAndClue() {
+      if (!gameState.isAdminAuthenticated) return;
+      const stageNum = parseInt(document.getElementById("stageSelect").value);
+      const code = document.getElementById("accessCode").value.trim();
+      const clue = document.getElementById("clueText").value.trim();
+      const proximity = parseInt(document.getElementById("proximityInput").value) || 50;
+      if (!code || code.length !== 5) {
+        showStatus("adminStatus", "Enter a valid 5-digit code", "error");
+        return;
+      }
+      gameState.stages[stageNum] = {
+        code, clue,
+        location: [28.61 + stageNum*0.01, 77.23 + stageNum*0.01], // example coords
+        proximity
+      };
+      showStatus("adminStatus", `Stage ${stageNum} saved!`, "success");
+      document.getElementById("accessCode").value = "";
+      document.getElementById("clueText").value = "";
+    }
+
+    // --- Player Functions ---
+    function loginPlayer() {
+      const id = document.getElementById("playerId").value.trim();
+      if (!id) { showStatus("playerStatus", "Enter your ID", "error"); return; }
+      let foundTeam = null;
+      for (const teamId in gameState.teams) {
+        if (gameState.teams[teamId].members.includes(id)) {
+          foundTeam = teamId; break;
+        }
+      }
+      if (!foundTeam) {
+        showStatus("playerStatus", "Invalid team member ID", "error"); return;
+      }
+      if (navigator.geolocation) {
+        navigator.geolocation.getCurrentPosition(pos => {
+          gameState.players.push({ id, lat: pos.coords.latitude, lon: pos.coords.longitude });
+          updatePlayerList();
+          showStatus("playerStatus", `Player ${id} joined!`, "success");
+          if (gameState.players.length >= 5) {
+            document.getElementById("gameArea").classList.remove("hidden");
+          }
+        }, () => showStatus("playerStatus", "Location denied", "error"));
+      }
+    }
+    function updatePlayerList() {
+      document.getElementById("playerList").innerHTML =
+        gameState.players.map(p => `<li>${p.id} (${p.lat.toFixed(4)}, ${p.lon.toFixed(4)})</li>`).join("");
+    }
+    function allPlayersNearby(stage) {
+      if (gameState.players.length < 5) return false;
+      const maxDist = stage.proximity || 50;
+      for (let i=0;i<gameState.players.length;i++){
+        for (let j=i+1;j<gameState.players.length;j++){
+          if (distance(gameState.players[i], gameState.players[j]) > maxDist) return false;
+        }
+      }
+      return true;
+    }
+    function submitCode() {
+      const stage = gameState.stages[gameState.currentStage];
+      if (!stage) { showStatus("gameStatus", "Stage not set!", "error"); return; }
+      if (!allPlayersNearby(stage)) {
+        showStatus("gameStatus", `All 5 players must be within ${stage.proximity}m!`, "warning"); return;
+      }
+      const code = document.getElementById("playerCode").value.trim();
+      if (code === stage.code) {
+        showStatus("gameStatus", "Correct code!", "success");
+        showClue(stage.clue, stage.location);
+        // Auto progress
+        if (gameState.currentStage < Object.keys(gameState.stages).length) {
+          gameState.currentStage++;
+          document.getElementById("stageNumber").textContent = gameState.currentStage;
+        } else {
+          showVictory();
+        }
+      } else {
+        showStatus("gameStatus", "Wrong code!", "error");
+      }
+      document.getElementById("playerCode").value = "";
+    }
+    function showClue(clue, location) {
+      const clueArea = document.getElementById("clueArea");
+      clueArea.classList.remove("hidden");
+      clueArea.innerHTML = `<h3>Clue</h3><p>${clue}</p>`;
+      document.getElementById("map").classList.remove("hidden");
+      if (!map) {
+        map = L.map("map").setView(location, 14);
+        L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+          attribution: '&copy; OpenStreetMap contributors'
+        }).addTo(map);
+      }
+      if (marker) marker.remove();
+      marker = L.marker(location).addTo(map).bindPopup("Next Location").openPopup();
+      map.setView(location, 14);
+    }
+    function showVictory() {
+      const clueArea = document.getElementById("clueArea");
+      clueArea.classList.remove("hidden");
+      clueArea.innerHTML = `<h2>🏆 Congratulations!</h2><p>Your team completed the hunt!</p>`;
+      document.getElementById("map").classList.add("hidden");
+    }
+
+    // --- Utilities ---
+    function showStatus(elementId, message, type) {
+      const el = document.getElementById(elementId);
+      el.innerHTML = `<div class="status ${type}">${message}</div>`;
+      setTimeout(() => { el.innerHTML = ""; }, 4000);
+    }
+    function distance(p1, p2) {
+      const R = 6371000;
+      const dLat = (p2.lat - p1.lat) * Math.PI/180;
+      const dLon = (p2.lon - p1.lon) * Math.PI/180;
+      const lat1 = p1.lat * Math.PI/180;
+      const lat2 = p2.lat * Math.PI/180;
+      const a = Math.sin(dLat/2)**2 + Math.sin(dLon/2)**2 * Math.cos(lat1) * Math.cos(lat2);
+      return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+    }
   </script>
 </body>
 </html>
